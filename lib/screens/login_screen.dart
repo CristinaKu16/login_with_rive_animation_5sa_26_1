@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:rive/rive.dart';
-import "dart:async"; //3.1 importa el timer
+import 'dart:async'; //3.1 Importa un timer
+import 'package:rive/rive.dart'
+    show
+        Artboard,
+        RiveAnimation,
+        SMIBool,
+        SMINumber,
+        SMITrigger,
+        StateMachineController;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,195 +17,296 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  //Control para mostrar/ocultar contraseña
-  bool _obscureText = true;
+  bool _isObscured = true;
 
-  //Crear cerebro de la animacion
   StateMachineController? _controller;
 
-  //SMI: State Machine Input
   SMIBool? _isChecking;
   SMIBool? _isHandsUp;
-  //SMIBool? _isLookDown;
-  //SMITrigger? _numLook;
-  SMITrigger? _trigSuccess;
-  SMITrigger? _trigFail;
+  SMITrigger? _triggerSuccess;
+  SMITrigger? _triggerFail;
 
-//2.1 variable para el modo chismoso de la cabeza
-  SMINumber? _numlook;
+  //2.1 Variable para el recorrido de los ojos
+  SMINumber? _numLook;
 
-  //1.1 Crear variables focusNode
+  //1.1) craear variables para FocusNode
   final _emailFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
 
-  //3.1 Timer para detener mirada al dejar de escribir
+  //3.2 Timaer para detener miradada al dejar de escribir
   Timer? _typingDebounce;
 
-  //1.2 Agregar listeners a los focusNode
+  //crear los controllers para manipular el texto escrito
+  // 4.1 Controllers
+  final emailCtrl = TextEditingController();
+  final passCtrl = TextEditingController();
+
+  // 4.2 Errores para mostrar en la UI
+  String? emailError;
+  String? passError;
+
+  // 4.3 Validadores
+  bool isValidEmail(String email) {
+    final re = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    return re.hasMatch(email);
+  }
+
+  bool isValidPassword(String pass) {
+    // mínimo 8, una mayúscula, una minúscula, un dígito y un especial
+    final re = RegExp(
+      r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$',
+    );
+    return re.hasMatch(pass);
+  }
+
+  // 4.4 Acción al botón
+  void _onLogin() {
+    //De lo que me dio el usuario, quitar espacios en blanco
+    final email = emailCtrl.text.trim();
+    final pass = passCtrl.text;
+
+    // Recalcular errores
+    final eError = isValidEmail(email) ? null : 'Email inválido';
+    final pError = isValidPassword(pass)
+        ? null
+        : 'Mínimo 8 caracteres, 1 mayúscula,  1 minúscula, 1 número y 1 caracter especial';
+
+    // 4.5 Para avisar que hubo un cambio
+    setState(() {
+      emailError = eError;
+      passError = pError;
+    });
+
+    // 4.6 Cerrar el teclado y bajar manos
+    FocusScope.of(context).unfocus();
+    _typingDebounce?.cancel();
+    _isChecking?.change(false);
+    _isHandsUp?.change(false);
+    _numLook?.value = 50.0; // Mirada neutral
+
+    // 4.7 Activar triggers
+    if (eError == null && pError == null) {
+      _triggerSuccess?.fire();
+    } else {
+      _triggerFail?.fire();
+    }
+  }
+
+  //1.2) agregar listeners a los FocusNode en initState (oyentes/chismosos)
   @override
   void initState() {
     super.initState();
 
     _emailFocusNode.addListener(() {
       if (_emailFocusNode.hasFocus) {
-        //Verifica que no sea nulo
+        //verifica que no sea nulo
         if (_isHandsUp != null) {
           //Manos abajo en el email
           _isHandsUp?.change(false);
-          _numlook?.value = 50.0;
+          //2.2) ojos mirando al frente
+          _numLook?.value = 50.0;
         }
       }
     });
 
-    //Listener para password
     _passwordFocusNode.addListener(() {
-      if (_passwordFocusNode.hasFocus) {
-        if (_isChecking != null) {
-          //No quiero el modo chismoso en el password
-          _isChecking?.change(false);
-        }
-        if (_isHandsUp != null) {
-          _isHandsUp?.change(true);
-        }
-      }
+      //Manos arriba en password
+      _isHandsUp?.change(_passwordFocusNode.hasFocus);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    //Para obtener el tamaño de la pantalla
     final Size size = MediaQuery.of(context).size;
 
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
-          child: Column(
-            children: [
-              SizedBox(
-                width: size.width,
-                height: 200,
-                child: RiveAnimation.asset(
-                  'animated_login_bear.riv',
-                  stateMachines: ['Login Machine'],
-                  onInit: (artboard) {
-                    _controller = StateMachineController.fromArtboard(
-                      artboard,
-                      'Login Machine',
-                    );
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: size.width,
+                  height: 200,
+                  child: RiveAnimation.asset(
+                    'animated_login_bear.riv',
+                    stateMachines: const ['Login Machine'],
+                    onInit: (Artboard artboard) {
+                      _controller = StateMachineController.fromArtboard(
+                        artboard,
+                        'Login Machine',
+                      );
 
-                    if (_controller == null) return;
+                      if (_controller == null) return;
 
-                    artboard.addController(_controller!);
+                      artboard.addController(_controller!);
 
-                    _isChecking = _controller!.findSMI('isChecking');
-                    _isHandsUp = _controller!.findSMI('isHandsUp');
-                    //_isLookDown = _controller!.findSMI('isLookDown') as SMIBool;
-                    //_numLook = _controller!.findSMI('numLook') as SMITrigger;
-                    _trigSuccess = _controller!.findSMI('trigSuccess');
-                    _trigFail = _controller!.findSMI('trigFail');
-                    //2.3 vincular numeros
-                    _numlook =_controller!.findSMI("numlook");
-
-                  }
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              // TextField Email
-              TextField(
-                //1.3 Agregar focusNode al TextField
-                focusNode: _emailFocusNode,
-                onChanged: (value) {
-                  if (_isHandsUp != null) {
-                    //_isHandsUp!.change(false);
-                  }
-                  //si chcking es nulo
-                  if (_isChecking != null) {
-                    //Activar modo chismoso
-                    _isChecking!.change(true);
-                    //2.4 implementar numlook
-                    //ajuste de limites de 0 a 100
-                    // 80 con medida de calibracion
-                    final look = (value.length / 80.0 * 100.0).clamp(0.0, 100.0);//clamp ´para limitar del 0 a 100
-                    _numlook?.value=look;
-
-      
-                    //3.3 Debounce si vuelve a teclear reiniciar el contador
-                    //cancelar cualquier timer
-                    _typingDebounce?.cancel();
-                    //crea nuevo timer
-                    _typingDebounce=  Timer(const Duration(seconds: 3), (){
-                      //si se cierra la pantalla quita el contador
-                      if(!mounted) return;
-                      
-                    //mirada neutra 
-                    _isChecking?.change(false);
-
-
-                    });
-
-
-                  }
-                },
-                decoration: InputDecoration(
-                  hintText: 'Email',
-                  prefixIcon: const Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              // TextField Password
-              TextField(
-                //1.3 Agregar focusNode al TextField
-                focusNode: _passwordFocusNode,
-                onChanged: (value) {
-                  if (_isChecking != null) {
-                    //No quiero el modo chismoso en el password
-                    //_isChecking!.change(false);
-                  }/////////////////////////////////
-                  if (_isHandsUp != null) {
-                    _isHandsUp!.change(true);
-                  }
-                },
-                obscureText: _obscureText,
-                decoration: InputDecoration(
-                  hintText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureText
-                          ? Icons.visibility
-                          : Icons.visibility_off,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _obscureText = !_obscureText;
-                      });
+                      _isChecking =
+                          _controller!.findSMI('isChecking') as SMIBool?;
+                      _isHandsUp =
+                          _controller!.findSMI('isHandsUp') as SMIBool?;
+                      _triggerSuccess =
+                          _controller!.findSMI('trigSuccess') as SMITrigger?;
+                      _triggerFail =
+                          _controller!.findSMI('trigFail') as SMITrigger?;
+                      //2.3 vincular numLook con el controlador
+                      _numLook =
+                          _controller!.findSMI('numLook') as SMINumber?;
                     },
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                ),
+
+                const SizedBox(height: 10),
+
+                //Campo de texto email
+                TextField(
+                  controller: emailCtrl,
+
+                  //1.3) asignar el FocusNode al TextField
+                  focusNode: _emailFocusNode,
+                  onChanged: (value) {
+                    if (_isHandsUp != null) {}
+
+                    if (_isChecking != null) {
+                      _isChecking!.value = true;
+
+                      //2.4 Implementar numLook
+                      final look =
+                          (value.length / 80.0 * 100).clamp(0, 100);
+
+                      _numLook?.value = look.toDouble();
+
+                      //3.3 Reiniciar el timer cada vez que se escribe
+                      _typingDebounce?.cancel();
+
+                      _typingDebounce = Timer(
+                        const Duration(milliseconds: 800),
+                        () {
+                          if (!mounted) return;
+
+                          _isChecking?.change(false);
+                        },
+                      );
+                    }
+                  },
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    errorText: emailError,
+                    hintText: 'Email',
+                    prefixIcon: const Icon(Icons.email),
+                    border: const OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.all(Radius.circular(20)),
+                    ),
                   ),
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 10),
+
+                //Campo de texto password
+                TextField(
+                  focusNode: _passwordFocusNode,
+                  controller: passCtrl,
+                  onChanged: (value) {
+                    if (_isChecking != null) {}
+
+                    if (_isHandsUp != null) {
+                      _isHandsUp!.value = true;
+                    }
+                  }, //  ESTA COMA FALTABA (línea 104)
+
+                  obscureText: _isObscured,
+                  decoration: InputDecoration(
+                    errorText: passError,
+                    hintText: 'Password',
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _isObscured
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isObscured = !_isObscured;
+                        });
+                      },
+                    ),
+                    border: const OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.all(Radius.circular(20)),
+                    ),
+                  ),
+                ),
+
+                SizedBox(height: 10),
+
+                //Texto "OLVIDASTE TU CONTRASEÑA?"
+                SizedBox(
+                  width: size.width,
+                  child: const Text(
+                    'Forgot password?',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                        decoration: TextDecoration.underline),
+                  ),
+                ),
+
+                SizedBox(height: 10),
+
+                MaterialButton(
+                  minWidth: size.width,
+                  height: 50,
+                  color: const Color.fromARGB(255, 125, 82, 255),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  onPressed: _onLogin,
+                  child: const Text(
+                    "Login",
+                    style: TextStyle(
+                        color: Colors.white, fontSize: 18),
+                  ),
+                ),
+
+                SizedBox(height: 20),
+
+                //No tienes cuenta? Registrate
+                SizedBox(
+                  width: size.width,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Text("Don't have an account?"),
+                      SizedBox(width: 5),
+                      Text(
+                        'Register',
+                        style: TextStyle(
+                          color: Colors.black,
+                          decoration: TextDecoration.underline,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  //1.4 Liberar recursos(memoria) de los focusNode
+  //1.4 liberar memoria
   @override
   void dispose() {
+    //4.11 liberar los controllers
     _emailFocusNode.dispose();
     _passwordFocusNode.dispose();
+    emailCtrl.dispose();
+    passCtrl.dispose();
     _typingDebounce?.cancel();
     super.dispose();
   }
